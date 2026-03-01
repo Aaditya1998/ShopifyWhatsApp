@@ -72,6 +72,8 @@ public class TemplateMessage
     public List<TemplateButtonParameter> ButtonParameters { get; set; } = new();
     public bool HasButtons => ButtonParameters.Count > 0;
 
+    public TemplateMessage() { }
+
     public TemplateMessage(string templateName, List<string> bodyParameters)
     {
         TemplateName = templateName;
@@ -90,6 +92,8 @@ public class TemplateButtonParameter
 {
     public int Index { get; set; }
     public string DynamicUrlSuffix { get; set; } = string.Empty;
+
+    public TemplateButtonParameter() { }
 
     public TemplateButtonParameter(int index, string dynamicUrlSuffix)
     {

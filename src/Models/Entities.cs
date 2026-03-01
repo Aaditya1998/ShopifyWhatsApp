@@ -58,6 +58,47 @@ public class MessageLog
 }
 
 // ──────────────────────────────────────────────
+// Scheduled Message (deferred sending queue)
+// ──────────────────────────────────────────────
+public class ScheduledMessage
+{
+    [Key]
+    public int Id { get; set; }
+
+    [Required]
+    [MaxLength(20)]
+    public string PhoneNumber { get; set; } = string.Empty;
+
+    /// <summary>Shopify checkout ID — used for deduplication and cancellation.</summary>
+    public long ShopifyCheckoutId { get; set; }
+
+    [MaxLength(100)]
+    public string CheckoutToken { get; set; } = string.Empty;
+
+    /// <summary>Message type, e.g. "abandoned_cart". Future-proofing for other delayed types.</summary>
+    [MaxLength(50)]
+    public string MessageType { get; set; } = "abandoned_cart";
+
+    /// <summary>Serialized TemplateMessage JSON — captured at scheduling time.</summary>
+    public string TemplatePayloadJson { get; set; } = string.Empty;
+
+    /// <summary>pending → sent | cancelled | failed</summary>
+    [MaxLength(20)]
+    public string Status { get; set; } = "pending";
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    /// <summary>When the message should be sent (CreatedAt + delay).</summary>
+    public DateTime ScheduledFor { get; set; }
+
+    /// <summary>When the message was actually processed.</summary>
+    public DateTime? ProcessedAt { get; set; }
+
+    [MaxLength(100)]
+    public string? CancellationReason { get; set; }
+}
+
+// ──────────────────────────────────────────────
 // Conversation Window (24-hour tracking)
 // ──────────────────────────────────────────────
 public class ConversationWindow

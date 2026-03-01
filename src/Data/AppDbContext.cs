@@ -10,6 +10,7 @@ public class AppDbContext : DbContext
     public DbSet<CustomerConsent> CustomerConsents { get; set; }
     public DbSet<MessageLog> MessageLogs { get; set; }
     public DbSet<ConversationWindow> ConversationWindows { get; set; }
+    public DbSet<ScheduledMessage> ScheduledMessages { get; set; }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -36,6 +37,15 @@ public class AppDbContext : DbContext
         {
             entity.ToTable("conversation_windows");
             entity.HasIndex(e => e.PhoneNumber).IsUnique();
+        });
+
+        // ScheduledMessage
+        modelBuilder.Entity<ScheduledMessage>(entity =>
+        {
+            entity.ToTable("scheduled_messages");
+            entity.HasIndex(e => new { e.Status, e.ScheduledFor });
+            entity.HasIndex(e => new { e.PhoneNumber, e.Status });
+            entity.HasIndex(e => e.ShopifyCheckoutId);
         });
 
         base.OnModelCreating(modelBuilder);

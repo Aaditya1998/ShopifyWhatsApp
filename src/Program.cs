@@ -30,6 +30,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 builder.Services.Configure<WhatsAppSettings>(builder.Configuration.GetSection("WhatsApp"));
 builder.Services.Configure<ShopifySettings>(builder.Configuration.GetSection("Shopify"));
 builder.Services.Configure<AdminSettings>(builder.Configuration.GetSection("Admin"));
+builder.Services.Configure<AbandonedCartSettings>(builder.Configuration.GetSection("AbandonedCart"));
 
 // ──────────────────────────────────────────────
 // HttpClient for WhatsApp Cloud API (with retry policy)
@@ -63,6 +64,7 @@ builder.Services.AddScoped<IWhatsAppService, WhatsAppService>();
 builder.Services.AddScoped<IShopifyService, ShopifyService>();
 builder.Services.AddScoped<ITemplateService, TemplateService>();
 builder.Services.AddScoped<IConsentService, ConsentService>();
+builder.Services.AddHostedService<AbandonedCartSenderService>();
 
 builder.Services.AddControllers()
     .AddNewtonsoftJson(options =>
@@ -155,4 +157,10 @@ public class ShopifySettings
 public class AdminSettings
 {
     public string ApiKey { get; set; } = string.Empty;
+}
+
+public class AbandonedCartSettings
+{
+    public int DelayMinutes { get; set; } = 60;
+    public int PollIntervalSeconds { get; set; } = 30;
 }

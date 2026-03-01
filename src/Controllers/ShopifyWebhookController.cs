@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
+using ShopifyWhatsApp.Data;
 using ShopifyWhatsApp.Middleware;
 using ShopifyWhatsApp.Models;
 using ShopifyWhatsApp.Services;
@@ -14,17 +17,23 @@ public class ShopifyWebhookController : ControllerBase
     private readonly IWhatsAppService _whatsApp;
     private readonly ITemplateService _templates;
     private readonly IConsentService _consent;
+    private readonly AppDbContext _db;
+    private readonly AbandonedCartSettings _abandonedCartSettings;
     private readonly ILogger<ShopifyWebhookController> _logger;
 
     public ShopifyWebhookController(
         IWhatsAppService whatsApp,
         ITemplateService templates,
         IConsentService consent,
+        AppDbContext db,
+        IOptions<AbandonedCartSettings> abandonedCartSettings,
         ILogger<ShopifyWebhookController> logger)
     {
         _whatsApp = whatsApp;
         _templates = templates;
         _consent = consent;
+        _db = db;
+        _abandonedCartSettings = abandonedCartSettings.Value;
         _logger = logger;
     }
 
@@ -54,6 +63,24 @@ public class ShopifyWebhookController : ControllerBase
             {
                 await _consent.RecordConsentAsync(phone, "checkout", order.Customer?.Id);
                 _logger.LogInformation("✅ Auto-consented {Phone} via checkout", phone);
+            }
+
+            // Cancel any pending abandoned cart messages for this customer
+            var pendingMessages = await _db.ScheduledMessages
+                .Where(sm => sm.PhoneNumber == phone && sm.Status == "pending")
+                .ToListAsync();
+
+            if (pendingMessages.Count > 0)
+            {
+                foreach (var pending in pendingMessages)
+                {
+                    pending.Status = "cancelled";
+                    pending.ProcessedAt = DateTime.UtcNow;
+                    pending.CancellationReason = "order_completed";
+                }
+                await _db.SaveChangesAsync();
+                _logger.LogInformation("🚫 Cancelled {Count} pending abandoned cart message(s) for {Phone} — order completed",
+                    pendingMessages.Count, phone);
             }
 
             // Build and send template message with button
@@ -197,20 +224,41 @@ public class ShopifyWebhookController : ControllerBase
                 _logger.LogInformation("✅ Auto-consented {Phone} via checkout", phone);
             }
 
+            // Idempotency: skip if already scheduled for this checkout
+            var alreadyScheduled = await _db.ScheduledMessages
+                .AnyAsync(sm => sm.ShopifyCheckoutId == checkout.Id && sm.Status == "pending");
+
+            if (alreadyScheduled)
+            {
+                _logger.LogInformation("⏭️ Checkout {CheckoutId} already has a pending message, skipping", checkout.Id);
+                return Ok(new { status = "skipped", reason = "already_scheduled" });
+            }
+
+            // Build template NOW (payload won't be available later)
             var templateMessage = _templates.GetAbandonedCart(checkout);
-            _logger.LogInformation("📋 Sending {Template} to {Phone} | Params: {Params}, Buttons: {Buttons}",
-                templateMessage.TemplateName, phone,
-                string.Join(", ", templateMessage.BodyParameters),
-                templateMessage.ButtonParameters.Count);
+            var templateJson = JsonConvert.SerializeObject(templateMessage);
 
-            var result = await _whatsApp.SendTemplateMessageAsync(phone, templateMessage);
+            // Schedule instead of sending immediately
+            var scheduledMessage = new ScheduledMessage
+            {
+                PhoneNumber = phone,
+                ShopifyCheckoutId = checkout.Id,
+                CheckoutToken = checkout.Token ?? string.Empty,
+                MessageType = "abandoned_cart",
+                TemplatePayloadJson = templateJson,
+                Status = "pending",
+                CreatedAt = DateTime.UtcNow,
+                ScheduledFor = DateTime.UtcNow.AddMinutes(_abandonedCartSettings.DelayMinutes)
+            };
 
-            await _consent.LogMessageAsync(
-                phone, templateMessage.TemplateName, "checkout_abandoned",
-                whatsAppMessageId: result?.Messages?.FirstOrDefault()?.Id,
-                errorMessage: result == null ? "API call failed after retries" : null);
+            _db.ScheduledMessages.Add(scheduledMessage);
+            await _db.SaveChangesAsync();
 
-            return Ok(new { status = result != null ? "sent" : "failed", template = templateMessage.TemplateName });
+            _logger.LogInformation(
+                "⏰ Scheduled abandoned cart for {Phone} at {ScheduledFor} ({DelayMin}m delay, checkout {CheckoutId})",
+                phone, scheduledMessage.ScheduledFor, _abandonedCartSettings.DelayMinutes, checkout.Id);
+
+            return Ok(new { status = "scheduled", scheduledFor = scheduledMessage.ScheduledFor });
         }
         catch (Exception ex)
         {
