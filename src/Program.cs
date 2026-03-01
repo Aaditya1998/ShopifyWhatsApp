@@ -29,6 +29,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // ──────────────────────────────────────────────
 builder.Services.Configure<WhatsAppSettings>(builder.Configuration.GetSection("WhatsApp"));
 builder.Services.Configure<ShopifySettings>(builder.Configuration.GetSection("Shopify"));
+builder.Services.Configure<AdminSettings>(builder.Configuration.GetSection("Admin"));
 
 // ──────────────────────────────────────────────
 // HttpClient for WhatsApp Cloud API (with retry policy)
@@ -149,4 +150,9 @@ public class ShopifySettings
     public string ShopDomain { get; set; } = string.Empty;
     public string WebhookSecret { get; set; } = string.Empty;
     public string WebhookBaseUrl { get; set; } = string.Empty;
+}
+
+public class AdminSettings
+{
+    public string ApiKey { get; set; } = string.Empty;
 }

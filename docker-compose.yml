@@ -25,6 +25,7 @@ services:
       - Shopify__ShopDomain=${SHOPIFY_SHOP_DOMAIN}
       - Shopify__WebhookSecret=${SHOPIFY_WEBHOOK_SECRET}
       - Shopify__WebhookBaseUrl=${WEBHOOK_BASE_URL}
+      - Admin__ApiKey=${ADMIN_API_KEY}
     depends_on:
       db:
         condition: service_healthy
