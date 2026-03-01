@@ -56,21 +56,23 @@ public class ShopifyWebhookController : ControllerBase
                 _logger.LogInformation("✅ Auto-consented {Phone} via checkout", phone);
             }
 
-            // Build and send template message
-            var (templateName, parameters) = _templates.GetOrderConfirmation(order);
-            _logger.LogInformation("📋 Sending {Template} to {Phone} | Params: {Params}",
-                templateName, phone, string.Join(", ", parameters));
+            // Build and send template message with button
+            var templateMessage = _templates.GetOrderConfirmation(order);
+            _logger.LogInformation("📋 Sending {Template} to {Phone} | Params: {Params}, Buttons: {Buttons}",
+                templateMessage.TemplateName, phone,
+                string.Join(", ", templateMessage.BodyParameters),
+                templateMessage.ButtonParameters.Count);
 
-            var result = await _whatsApp.SendTemplateMessageAsync(phone, templateName, parameters);
+            var result = await _whatsApp.SendTemplateMessageAsync(phone, templateMessage);
 
             // Log the message
             await _consent.LogMessageAsync(
-                phone, templateName, "order_created",
+                phone, templateMessage.TemplateName, "order_created",
                 shopifyOrderId: order.Id,
                 whatsAppMessageId: result?.Messages?.FirstOrDefault()?.Id,
                 errorMessage: result == null ? "API call failed after retries" : null);
 
-            return Ok(new { status = result != null ? "sent" : "failed", template = templateName });
+            return Ok(new { status = result != null ? "sent" : "failed", template = templateMessage.TemplateName });
         }
         catch (Exception ex)
         {
@@ -100,19 +102,21 @@ public class ShopifyWebhookController : ControllerBase
                 _logger.LogInformation("✅ Auto-consented {Phone} via checkout", phone);
             }
 
-            var (templateName, parameters) = _templates.GetShippingUpdate(order);
-            _logger.LogInformation("📋 Sending {Template} to {Phone} | Params: {Params}",
-                templateName, phone, string.Join(", ", parameters));
+            var templateMessage = _templates.GetShippingUpdate(order);
+            _logger.LogInformation("📋 Sending {Template} to {Phone} | Params: {Params}, Buttons: {Buttons}",
+                templateMessage.TemplateName, phone,
+                string.Join(", ", templateMessage.BodyParameters),
+                templateMessage.ButtonParameters.Count);
 
-            var result = await _whatsApp.SendTemplateMessageAsync(phone, templateName, parameters);
+            var result = await _whatsApp.SendTemplateMessageAsync(phone, templateMessage);
 
             await _consent.LogMessageAsync(
-                phone, templateName, "order_fulfilled",
+                phone, templateMessage.TemplateName, "order_fulfilled",
                 shopifyOrderId: order.Id,
                 whatsAppMessageId: result?.Messages?.FirstOrDefault()?.Id,
                 errorMessage: result == null ? "API call failed after retries" : null);
 
-            return Ok(new { status = result != null ? "sent" : "failed", template = templateName });
+            return Ok(new { status = result != null ? "sent" : "failed", template = templateMessage.TemplateName });
         }
         catch (Exception ex)
         {
@@ -193,18 +197,20 @@ public class ShopifyWebhookController : ControllerBase
                 _logger.LogInformation("✅ Auto-consented {Phone} via checkout", phone);
             }
 
-            var (templateName, parameters) = _templates.GetAbandonedCart(checkout);
-            _logger.LogInformation("📋 Sending {Template} to {Phone} | Params: {Params}",
-                templateName, phone, string.Join(", ", parameters));
+            var templateMessage = _templates.GetAbandonedCart(checkout);
+            _logger.LogInformation("📋 Sending {Template} to {Phone} | Params: {Params}, Buttons: {Buttons}",
+                templateMessage.TemplateName, phone,
+                string.Join(", ", templateMessage.BodyParameters),
+                templateMessage.ButtonParameters.Count);
 
-            var result = await _whatsApp.SendTemplateMessageAsync(phone, templateName, parameters);
+            var result = await _whatsApp.SendTemplateMessageAsync(phone, templateMessage);
 
             await _consent.LogMessageAsync(
-                phone, templateName, "checkout_abandoned",
+                phone, templateMessage.TemplateName, "checkout_abandoned",
                 whatsAppMessageId: result?.Messages?.FirstOrDefault()?.Id,
                 errorMessage: result == null ? "API call failed after retries" : null);
 
-            return Ok(new { status = result != null ? "sent" : "failed", template = templateName });
+            return Ok(new { status = result != null ? "sent" : "failed", template = templateMessage.TemplateName });
         }
         catch (Exception ex)
         {

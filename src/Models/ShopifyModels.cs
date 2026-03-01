@@ -45,6 +45,9 @@ public class ShopifyOrderPayload
 
     [JsonProperty("fulfillments")]
     public List<ShopifyFulfillment> Fulfillments { get; set; } = new();
+
+    [JsonProperty("order_status_url")]
+    public string? OrderStatusUrl { get; set; }
 }
 
 public class ShopifyCustomer

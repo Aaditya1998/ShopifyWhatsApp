@@ -8,6 +8,7 @@ namespace ShopifyWhatsApp.Services;
 public interface IWhatsAppService
 {
     Task<WhatsAppSendResponse?> SendTemplateMessageAsync(string phoneNumber, string templateName, List<string> parameters);
+    Task<WhatsAppSendResponse?> SendTemplateMessageAsync(string phoneNumber, TemplateMessage templateMessage);
     Task<WhatsAppSendResponse?> SendTextMessageAsync(string phoneNumber, string text);
     Task MarkMessageAsReadAsync(string messageId);
 }
@@ -85,6 +86,88 @@ public class WhatsAppService : IWhatsAppService
 
         _logger.LogError("💀 All 3 retry attempts failed for template '{Template}' to {Phone}",
             templateName, phone);
+        return null;
+    }
+
+    /// <summary>
+    /// Send a template message with optional URL button parameters.
+    /// </summary>
+    public async Task<WhatsAppSendResponse?> SendTemplateMessageAsync(
+        string phoneNumber, TemplateMessage templateMessage)
+    {
+        var phone = NormalizePhone(phoneNumber);
+
+        var components = new List<WhatsAppComponent>();
+
+        // Body component
+        if (templateMessage.BodyParameters.Count > 0)
+        {
+            components.Add(new WhatsAppComponent
+            {
+                Type = "body",
+                Parameters = templateMessage.BodyParameters.Select(p => new WhatsAppParameter
+                {
+                    Type = "text",
+                    Text = p
+                }).ToList()
+            });
+        }
+
+        // Button components (one per button)
+        foreach (var button in templateMessage.ButtonParameters)
+        {
+            components.Add(new WhatsAppComponent
+            {
+                Type = "button",
+                SubType = "url",
+                Index = button.Index.ToString(),
+                Parameters = new List<WhatsAppParameter>
+                {
+                    new() { Type = "text", Text = button.DynamicUrlSuffix }
+                }
+            });
+        }
+
+        var request = new WhatsAppTemplateRequest
+        {
+            To = phone,
+            Template = new WhatsAppTemplate
+            {
+                Name = templateMessage.TemplateName,
+                Language = new WhatsAppLanguage { Code = "en_US" },
+                Components = components
+            }
+        };
+
+        _logger.LogInformation(
+            "📤 Sending template '{Template}' to {Phone} with {BodyParams} body params and {ButtonCount} buttons",
+            templateMessage.TemplateName, phone,
+            templateMessage.BodyParameters.Count, templateMessage.ButtonParameters.Count);
+
+        // Retry up to 3 times with exponential backoff
+        WhatsAppSendResponse? result = null;
+        for (int attempt = 1; attempt <= 3; attempt++)
+        {
+            result = await SendRequestAsync<WhatsAppSendResponse>(
+                $"{_settings.PhoneNumberId}/messages", request);
+
+            if (result != null)
+            {
+                _logger.LogInformation("📨 Message accepted on attempt {Attempt}", attempt);
+                return result;
+            }
+
+            if (attempt < 3)
+            {
+                var delay = TimeSpan.FromSeconds(Math.Pow(2, attempt));
+                _logger.LogWarning("🔄 Retry attempt {Attempt}/3 in {Delay}s for {Phone}",
+                    attempt, delay.TotalSeconds, phone);
+                await Task.Delay(delay);
+            }
+        }
+
+        _logger.LogError("💀 All 3 retry attempts failed for template '{Template}' to {Phone}",
+            templateMessage.TemplateName, phone);
         return null;
     }
 

@@ -43,6 +43,12 @@ public class WhatsAppComponent
     [JsonProperty("type")]
     public string Type { get; set; } = "body";
 
+    [JsonProperty("sub_type")]
+    public string? SubType { get; set; }
+
+    [JsonProperty("index")]
+    public string? Index { get; set; }
+
     [JsonProperty("parameters")]
     public List<WhatsAppParameter> Parameters { get; set; } = new();
 }
@@ -54,6 +60,42 @@ public class WhatsAppParameter
 
     [JsonProperty("text")]
     public string? Text { get; set; }
+}
+
+// ──────────────────────────────────────────────
+// Template Message Result (returned by TemplateService)
+// ──────────────────────────────────────────────
+public class TemplateMessage
+{
+    public string TemplateName { get; set; } = string.Empty;
+    public List<string> BodyParameters { get; set; } = new();
+    public List<TemplateButtonParameter> ButtonParameters { get; set; } = new();
+    public bool HasButtons => ButtonParameters.Count > 0;
+
+    public TemplateMessage(string templateName, List<string> bodyParameters)
+    {
+        TemplateName = templateName;
+        BodyParameters = bodyParameters;
+    }
+
+    public TemplateMessage(string templateName, List<string> bodyParameters, List<TemplateButtonParameter> buttonParameters)
+    {
+        TemplateName = templateName;
+        BodyParameters = bodyParameters;
+        ButtonParameters = buttonParameters;
+    }
+}
+
+public class TemplateButtonParameter
+{
+    public int Index { get; set; }
+    public string DynamicUrlSuffix { get; set; } = string.Empty;
+
+    public TemplateButtonParameter(int index, string dynamicUrlSuffix)
+    {
+        Index = index;
+        DynamicUrlSuffix = dynamicUrlSuffix;
+    }
 }
 
 // ──────────────────────────────────────────────
