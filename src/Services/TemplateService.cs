@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using ShopifyWhatsApp.Models;
 
 namespace ShopifyWhatsApp.Services;
@@ -26,10 +27,12 @@ public interface ITemplateService
 public class TemplateService : ITemplateService
 {
     private readonly ILogger<TemplateService> _logger;
+    private readonly string _storeBaseUrl;
 
-    public TemplateService(ILogger<TemplateService> logger)
+    public TemplateService(ILogger<TemplateService> logger, IOptions<ShopifySettings> shopifySettings)
     {
         _logger = logger;
+        _storeBaseUrl = $"https://{shopifySettings.Value.ShopDomain}/";
     }
 
     /// <summary>
@@ -51,9 +54,10 @@ public class TemplateService : ITemplateService
         var bodyParams = new List<string> { customerName, orderName, itemSummary, total, currency };
 
         var buttonParams = new List<TemplateButtonParameter>();
-        if (!string.IsNullOrWhiteSpace(order.OrderStatusUrl))
+        var urlSuffix = GetUrlSuffix(order.OrderStatusUrl);
+        if (urlSuffix != null)
         {
-            buttonParams.Add(new TemplateButtonParameter(0, order.OrderStatusUrl));
+            buttonParams.Add(new TemplateButtonParameter(0, urlSuffix));
         }
 
         return new TemplateMessage("order_confirmation_v2", bodyParams, buttonParams);
@@ -78,9 +82,10 @@ public class TemplateService : ITemplateService
         var bodyParams = new List<string> { orderName, carrier, trackingNumber };
 
         var buttonParams = new List<TemplateButtonParameter>();
-        if (!string.IsNullOrWhiteSpace(trackingUrl))
+        var urlSuffix = GetUrlSuffix(trackingUrl);
+        if (urlSuffix != null)
         {
-            buttonParams.Add(new TemplateButtonParameter(0, trackingUrl));
+            buttonParams.Add(new TemplateButtonParameter(0, urlSuffix));
         }
 
         return new TemplateMessage("shipping_update_v2", bodyParams, buttonParams);
@@ -126,9 +131,10 @@ public class TemplateService : ITemplateService
         var bodyParams = new List<string> { customerName, itemSummary, total, currency };
 
         var buttonParams = new List<TemplateButtonParameter>();
-        if (!string.IsNullOrWhiteSpace(checkoutUrl))
+        var urlSuffix = GetUrlSuffix(checkoutUrl);
+        if (urlSuffix != null)
         {
-            buttonParams.Add(new TemplateButtonParameter(0, checkoutUrl));
+            buttonParams.Add(new TemplateButtonParameter(0, urlSuffix));
         }
 
         return new TemplateMessage("abandoned_checkout_v2", bodyParams, buttonParams);
@@ -137,6 +143,30 @@ public class TemplateService : ITemplateService
     // ──────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────
+
+    /// <summary>
+    /// Strips the store base URL from a full URL to get just the dynamic suffix
+    /// for WhatsApp template URL buttons.
+    /// Template URL is "https://mulcart.myshopify.com/{{1}}" so we send only the path.
+    /// </summary>
+    private string? GetUrlSuffix(string? fullUrl)
+    {
+        if (string.IsNullOrWhiteSpace(fullUrl)) return null;
+
+        // Strip store base URL to get just the path
+        if (fullUrl.StartsWith(_storeBaseUrl, StringComparison.OrdinalIgnoreCase))
+            return fullUrl[_storeBaseUrl.Length..];
+
+        // For external URLs (e.g., carrier tracking), extract path+query
+        if (Uri.TryCreate(fullUrl, UriKind.Absolute, out var uri))
+        {
+            _logger.LogWarning("Button URL {Url} doesn't match store base {Base}, extracting path",
+                fullUrl, _storeBaseUrl);
+            return uri.PathAndQuery.TrimStart('/');
+        }
+
+        return fullUrl;
+    }
 
     private static string GetItemSummary(List<ShopifyLineItem> items)
     {
