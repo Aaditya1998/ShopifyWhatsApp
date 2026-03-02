@@ -9,6 +9,7 @@ public interface ITemplateService
     TemplateMessage GetShippingUpdate(ShopifyOrderPayload order);
     (string templateName, List<string> parameters) GetOrderCancelled(ShopifyOrderPayload order);
     TemplateMessage GetAbandonedCart(ShopifyCheckoutPayload checkout);
+    TemplateMessage GetOrderRefund(ShopifyOrderPayload order, string refundAmount, string currency, string reason);
 }
 
 /// <summary>
@@ -138,6 +139,32 @@ public class TemplateService : ITemplateService
         }
 
         return new TemplateMessage("abandoned_checkout_v2", bodyParams, buttonParams);
+    }
+
+    /// <summary>
+    /// Template: order_refund_v1
+    /// Body: "Hi {{1}}, a refund of {{2}} {{3}} has been processed for your order {{4}}.
+    ///        Reason: {{5}}. It may take 5-10 business days to appear in your account."
+    /// Button[0]: URL "View Order" → dynamic {{1}}
+    /// Category: UTILITY
+    /// </summary>
+    public TemplateMessage GetOrderRefund(ShopifyOrderPayload order, string refundAmount, string currency, string reason)
+    {
+        var customerName = order.Customer?.FullName ?? "Customer";
+        var orderName = order.Name;
+
+        _logger.LogInformation("📋 Building order_refund_v1 template for order {Order}", orderName);
+
+        var bodyParams = new List<string> { customerName, refundAmount, currency, orderName, reason };
+
+        var buttonParams = new List<TemplateButtonParameter>();
+        var urlSuffix = GetUrlSuffix(order.OrderStatusUrl);
+        if (urlSuffix != null)
+        {
+            buttonParams.Add(new TemplateButtonParameter(0, urlSuffix));
+        }
+
+        return new TemplateMessage("order_refund_v1", bodyParams, buttonParams);
     }
 
     // ──────────────────────────────────────────────

@@ -10,6 +10,7 @@ public interface IShopifyService
     Task RegisterAllWebhooksAsync();
     Task<List<ShopifyWebhookDetail>> ListWebhooksAsync();
     Task DeleteWebhookAsync(long id);
+    Task<ShopifyOrderPayload?> GetOrderByIdAsync(long orderId);
 }
 
 public class ShopifyService : IShopifyService
@@ -24,7 +25,8 @@ public class ShopifyService : IShopifyService
         { "orders/create", "/api/webhooks/shopify/order-created" },
         { "orders/fulfilled", "/api/webhooks/shopify/order-fulfilled" },
         { "orders/cancelled", "/api/webhooks/shopify/order-cancelled" },
-        { "checkouts/create", "/api/webhooks/shopify/checkout-abandoned" }
+        { "checkouts/create", "/api/webhooks/shopify/checkout-abandoned" },
+        { "refunds/create", "/api/webhooks/shopify/order-refund-created" }
     };
 
     public ShopifyService(
@@ -147,5 +149,36 @@ public class ShopifyService : IShopifyService
         {
             _logger.LogError(ex, "❌ Exception deleting webhook {Id}", id);
         }
+    }
+
+    /// <summary>
+    /// Fetch a single order by ID from the Shopify Admin API.
+    /// Used by refund handler since refund webhooks don't include full order details.
+    /// </summary>
+    public async Task<ShopifyOrderPayload?> GetOrderByIdAsync(long orderId)
+    {
+        var client = _httpClientFactory.CreateClient("ShopifyApi");
+
+        try
+        {
+            var response = await client.GetAsync($"orders/{orderId}.json");
+            var body = await response.Content.ReadAsStringAsync();
+
+            if (response.IsSuccessStatusCode)
+            {
+                var wrapper = JsonConvert.DeserializeObject<ShopifyOrderWrapper>(body);
+                _logger.LogInformation("📦 Fetched order {OrderId} from Shopify API", orderId);
+                return wrapper?.Order;
+            }
+
+            _logger.LogError("❌ Failed to fetch order {OrderId}: {StatusCode} - {Body}",
+                orderId, (int)response.StatusCode, body);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Exception fetching order {OrderId}", orderId);
+        }
+
+        return null;
     }
 }

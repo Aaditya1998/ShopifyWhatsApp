@@ -17,6 +17,7 @@ public class ShopifyWebhookController : ControllerBase
     private readonly IWhatsAppService _whatsApp;
     private readonly ITemplateService _templates;
     private readonly IConsentService _consent;
+    private readonly IShopifyService _shopify;
     private readonly AppDbContext _db;
     private readonly AbandonedCartSettings _abandonedCartSettings;
     private readonly ILogger<ShopifyWebhookController> _logger;
@@ -25,6 +26,7 @@ public class ShopifyWebhookController : ControllerBase
         IWhatsAppService whatsApp,
         ITemplateService templates,
         IConsentService consent,
+        IShopifyService shopify,
         AppDbContext db,
         IOptions<AbandonedCartSettings> abandonedCartSettings,
         ILogger<ShopifyWebhookController> logger)
@@ -32,6 +34,7 @@ public class ShopifyWebhookController : ControllerBase
         _whatsApp = whatsApp;
         _templates = templates;
         _consent = consent;
+        _shopify = shopify;
         _db = db;
         _abandonedCartSettings = abandonedCartSettings.Value;
         _logger = logger;
@@ -263,6 +266,81 @@ public class ShopifyWebhookController : ControllerBase
         catch (Exception ex)
         {
             _logger.LogError(ex, "💀 CRITICAL: CheckoutAbandoned handler crashed");
+            return Ok(new { status = "error", message = ex.Message });
+        }
+    }
+
+    // ──────────────────────────────────────────────
+    // POST /api/webhooks/shopify/order-refund-created
+    // ──────────────────────────────────────────────
+    [HttpPost("order-refund-created")]
+    public async Task<IActionResult> OrderRefundCreated()
+    {
+        try
+        {
+            var refund = await ReadBody<ShopifyRefundPayload>();
+            if (refund == null) return Ok(new { status = "skipped", reason = "invalid_payload" });
+
+            _logger.LogInformation("💰 Refund received: refund {RefundId} for order {OrderId}",
+                refund.Id, refund.OrderId);
+
+            // Fetch full order details from Shopify API (refund webhook doesn't include them)
+            var order = await _shopify.GetOrderByIdAsync(refund.OrderId);
+            if (order == null)
+            {
+                _logger.LogError("❌ Could not fetch order {OrderId} for refund {RefundId}",
+                    refund.OrderId, refund.Id);
+                return Ok(new { status = "failed", reason = "order_fetch_failed" });
+            }
+
+            var phone = GetCustomerPhone(order.Customer, order.ShippingAddress);
+            if (phone == null)
+            {
+                _logger.LogWarning("⚠️ No phone number for refund on order {OrderName}", order.Name);
+                return Ok(new { status = "skipped", reason = "no_phone" });
+            }
+
+            // Auto-consent: customer provided phone at checkout
+            if (!await _consent.HasConsentAsync(phone))
+            {
+                await _consent.RecordConsentAsync(phone, "checkout", order.Customer?.Id);
+                _logger.LogInformation("✅ Auto-consented {Phone} via checkout", phone);
+            }
+
+            // Calculate refund amount from transactions
+            var refundAmount = refund.Transactions
+                .Where(t => t.Kind.Equals("refund", StringComparison.OrdinalIgnoreCase))
+                .Sum(t => decimal.TryParse(t.Amount, out var amt) ? amt : 0m);
+
+            // Fallback: if no refund transactions, try summing line item subtotals
+            if (refundAmount == 0)
+            {
+                refundAmount = refund.RefundLineItems
+                    .Sum(rli => decimal.TryParse(rli.Subtotal, out var sub) ? sub : 0m);
+            }
+
+            var currency = refund.Transactions.FirstOrDefault()?.Currency ?? order.Currency;
+            var reason = refund.Note ?? "Refund processed";
+
+            var templateMessage = _templates.GetOrderRefund(order, refundAmount.ToString("F2"), currency, reason);
+            _logger.LogInformation("📋 Sending {Template} to {Phone} | Params: {Params}, Buttons: {Buttons}",
+                templateMessage.TemplateName, phone,
+                string.Join(", ", templateMessage.BodyParameters),
+                templateMessage.ButtonParameters.Count);
+
+            var result = await _whatsApp.SendTemplateMessageAsync(phone, templateMessage);
+
+            await _consent.LogMessageAsync(
+                phone, templateMessage.TemplateName, "order_refund_created",
+                shopifyOrderId: order.Id,
+                whatsAppMessageId: result?.Messages?.FirstOrDefault()?.Id,
+                errorMessage: result == null ? "API call failed after retries" : null);
+
+            return Ok(new { status = result != null ? "sent" : "failed", template = templateMessage.TemplateName });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "💀 CRITICAL: OrderRefundCreated handler crashed");
             return Ok(new { status = "error", message = ex.Message });
         }
     }

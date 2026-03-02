@@ -163,6 +163,78 @@ public class ShopifyCheckoutPayload
 // ──────────────────────────────────────────────
 // Shopify Webhook Registration
 // ──────────────────────────────────────────────
+// ──────────────────────────────────────────────
+// Shopify Refund Webhook Payload
+// ──────────────────────────────────────────────
+public class ShopifyRefundPayload
+{
+    [JsonProperty("id")]
+    public long Id { get; set; }
+
+    [JsonProperty("order_id")]
+    public long OrderId { get; set; }
+
+    [JsonProperty("created_at")]
+    public DateTime CreatedAt { get; set; }
+
+    [JsonProperty("note")]
+    public string? Note { get; set; }
+
+    [JsonProperty("restock")]
+    public bool Restock { get; set; }
+
+    [JsonProperty("transactions")]
+    public List<ShopifyRefundTransaction> Transactions { get; set; } = new();
+
+    [JsonProperty("refund_line_items")]
+    public List<ShopifyRefundLineItem> RefundLineItems { get; set; } = new();
+}
+
+public class ShopifyRefundTransaction
+{
+    [JsonProperty("id")]
+    public long Id { get; set; }
+
+    [JsonProperty("amount")]
+    public string Amount { get; set; } = "0.00";
+
+    [JsonProperty("currency")]
+    public string Currency { get; set; } = "USD";
+
+    [JsonProperty("kind")]
+    public string Kind { get; set; } = string.Empty; // "refund", "void", etc.
+
+    [JsonProperty("status")]
+    public string Status { get; set; } = string.Empty;
+}
+
+public class ShopifyRefundLineItem
+{
+    [JsonProperty("id")]
+    public long Id { get; set; }
+
+    [JsonProperty("quantity")]
+    public int Quantity { get; set; }
+
+    [JsonProperty("subtotal")]
+    public string Subtotal { get; set; } = "0.00";
+
+    [JsonProperty("line_item")]
+    public ShopifyLineItem? LineItem { get; set; }
+}
+
+// ──────────────────────────────────────────────
+// Shopify Order API Response Wrapper
+// ──────────────────────────────────────────────
+public class ShopifyOrderWrapper
+{
+    [JsonProperty("order")]
+    public ShopifyOrderPayload? Order { get; set; }
+}
+
+// ──────────────────────────────────────────────
+// Shopify Webhook Registration
+// ──────────────────────────────────────────────
 public class ShopifyWebhookRegistration
 {
     [JsonProperty("webhook")]
