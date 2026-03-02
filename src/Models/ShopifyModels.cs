@@ -48,6 +48,9 @@ public class ShopifyOrderPayload
 
     [JsonProperty("order_status_url")]
     public string? OrderStatusUrl { get; set; }
+
+    [JsonProperty("payment_gateway_names")]
+    public List<string> PaymentGatewayNames { get; set; } = new();
 }
 
 public class ShopifyCustomer

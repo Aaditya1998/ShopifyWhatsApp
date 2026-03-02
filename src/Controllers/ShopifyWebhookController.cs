@@ -86,7 +86,54 @@ public class ShopifyWebhookController : ControllerBase
                     pendingMessages.Count, phone);
             }
 
-            // Build and send template message with button
+            // Detect COD (Cash on Delivery) orders
+            var isCod = order.PaymentGatewayNames
+                .Any(g => g.Contains("cod", StringComparison.OrdinalIgnoreCase)
+                       || g.Equals("manual", StringComparison.OrdinalIgnoreCase));
+
+            if (isCod)
+            {
+                _logger.LogInformation("💵 COD order detected: {OrderName}", order.Name);
+
+                // Idempotency: don't resend for same order
+                var alreadySent = await _db.CodConfirmations
+                    .AnyAsync(c => c.ShopifyOrderId == order.Id);
+
+                if (alreadySent)
+                {
+                    _logger.LogInformation("⏭️ COD confirmation already sent for order {OrderName}", order.Name);
+                    return Ok(new { status = "skipped", reason = "cod_already_sent" });
+                }
+
+                var codTemplate = _templates.GetCodConfirmation(order);
+                _logger.LogInformation("📋 Sending {Template} to {Phone} | Params: {Params}, Buttons: {Buttons}",
+                    codTemplate.TemplateName, phone,
+                    string.Join(", ", codTemplate.BodyParameters),
+                    codTemplate.ButtonParameters.Count);
+
+                var codResult = await _whatsApp.SendTemplateMessageAsync(phone, codTemplate);
+
+                // Track COD confirmation
+                _db.CodConfirmations.Add(new CodConfirmation
+                {
+                    ShopifyOrderId = order.Id,
+                    OrderName = order.Name,
+                    PhoneNumber = phone,
+                    Status = "pending",
+                    SentAt = DateTime.UtcNow
+                });
+                await _db.SaveChangesAsync();
+
+                await _consent.LogMessageAsync(
+                    phone, codTemplate.TemplateName, "cod_confirmation_sent",
+                    shopifyOrderId: order.Id,
+                    whatsAppMessageId: codResult?.Messages?.FirstOrDefault()?.Id,
+                    errorMessage: codResult == null ? "API call failed after retries" : null);
+
+                return Ok(new { status = codResult != null ? "cod_confirmation_sent" : "failed", template = codTemplate.TemplateName });
+            }
+
+            // Prepaid order — send regular order confirmation
             var templateMessage = _templates.GetOrderConfirmation(order);
             _logger.LogInformation("📋 Sending {Template} to {Phone} | Params: {Params}, Buttons: {Buttons}",
                 templateMessage.TemplateName, phone,

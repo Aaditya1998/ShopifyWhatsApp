@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json;
+using ShopifyWhatsApp.Data;
 using ShopifyWhatsApp.Middleware;
 using ShopifyWhatsApp.Models;
 using ShopifyWhatsApp.Services;
@@ -14,17 +15,20 @@ public class WhatsAppWebhookController : ControllerBase
 {
     private readonly IWhatsAppService _whatsApp;
     private readonly IConsentService _consent;
+    private readonly AppDbContext _db;
     private readonly WhatsAppSettings _settings;
     private readonly ILogger<WhatsAppWebhookController> _logger;
 
     public WhatsAppWebhookController(
         IWhatsAppService whatsApp,
         IConsentService consent,
+        AppDbContext db,
         IOptions<WhatsAppSettings> settings,
         ILogger<WhatsAppWebhookController> logger)
     {
         _whatsApp = whatsApp;
         _consent = consent;
+        _db = db;
         _settings = settings.Value;
         _logger = logger;
     }
@@ -141,7 +145,45 @@ public class WhatsAppWebhookController : ControllerBase
             return;
         }
 
-        // 5. Default auto-reply
+        // 5. Check for pending COD confirmation
+        var pendingCod = await _db.CodConfirmations
+            .Where(c => c.PhoneNumber == from && c.Status == "pending")
+            .OrderByDescending(c => c.SentAt)
+            .FirstOrDefaultAsync();
+
+        if (pendingCod != null)
+        {
+            if (lowerText == "yes" || lowerText == "confirm")
+            {
+                pendingCod.Status = "confirmed";
+                pendingCod.RespondedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+                await _whatsApp.SendTextMessageAsync(from,
+                    $"✅ Your order {pendingCod.OrderName} is confirmed! We'll prepare it for delivery. Thank you!");
+                _logger.LogInformation("✅ COD order {OrderName} CONFIRMED by {Phone}", pendingCod.OrderName, from);
+                return;
+            }
+
+            if (lowerText == "no" || lowerText == "cancel")
+            {
+                pendingCod.Status = "declined";
+                pendingCod.RespondedAt = DateTime.UtcNow;
+                await _db.SaveChangesAsync();
+                await _whatsApp.SendTextMessageAsync(from,
+                    $"Your order {pendingCod.OrderName} cancellation request has been noted. Our team will process it shortly.");
+                _logger.LogWarning("🚫 COD order {OrderName} DECLINED by {Phone}", pendingCod.OrderName, from);
+                return;
+            }
+
+            // Customer sent something else — remind them
+            await _whatsApp.SendTextMessageAsync(from,
+                $"You have a pending COD order {pendingCod.OrderName}. Please reply YES to confirm or NO to cancel.");
+            _logger.LogInformation("❓ Unrecognized reply from {Phone} for COD order {OrderName}: {Text}",
+                from, pendingCod.OrderName, messageText);
+            return;
+        }
+
+        // 6. Default auto-reply
         // TODO: Expand this with AI-powered responses, FAQ lookup, or
         // route to a human agent via your support system.
         await _whatsApp.SendTextMessageAsync(from,

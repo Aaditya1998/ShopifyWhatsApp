@@ -99,6 +99,36 @@ public class ScheduledMessage
 }
 
 // ──────────────────────────────────────────────
+// COD Confirmation (Cash on Delivery order verification)
+// ──────────────────────────────────────────────
+public class CodConfirmation
+{
+    [Key]
+    public int Id { get; set; }
+
+    /// <summary>Shopify order ID — used for deduplication.</summary>
+    [Required]
+    public long ShopifyOrderId { get; set; }
+
+    /// <summary>Order display name, e.g. "#1001".</summary>
+    [Required]
+    [MaxLength(30)]
+    public string OrderName { get; set; } = string.Empty;
+
+    [Required]
+    [MaxLength(20)]
+    public string PhoneNumber { get; set; } = string.Empty;
+
+    /// <summary>pending → confirmed | declined</summary>
+    [MaxLength(20)]
+    public string Status { get; set; } = "pending";
+
+    public DateTime SentAt { get; set; } = DateTime.UtcNow;
+
+    public DateTime? RespondedAt { get; set; }
+}
+
+// ──────────────────────────────────────────────
 // Conversation Window (24-hour tracking)
 // ──────────────────────────────────────────────
 public class ConversationWindow

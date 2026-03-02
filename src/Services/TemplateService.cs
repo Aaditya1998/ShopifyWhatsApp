@@ -10,6 +10,7 @@ public interface ITemplateService
     (string templateName, List<string> parameters) GetOrderCancelled(ShopifyOrderPayload order);
     TemplateMessage GetAbandonedCart(ShopifyCheckoutPayload checkout);
     TemplateMessage GetOrderRefund(ShopifyOrderPayload order, string refundAmount, string currency, string reason);
+    TemplateMessage GetCodConfirmation(ShopifyOrderPayload order);
 }
 
 /// <summary>
@@ -165,6 +166,34 @@ public class TemplateService : ITemplateService
         }
 
         return new TemplateMessage("order_refund_v1", bodyParams, buttonParams);
+    }
+
+    /// <summary>
+    /// Template: cod_confirmation_v1
+    /// Body: "Hi {{1}}, your Cash on Delivery order {{2}} for {{3}} {{4}} has been placed.
+    ///        Please reply YES to confirm or NO to cancel this order."
+    /// Button[0]: URL "View Order" → dynamic {{1}}
+    /// Category: UTILITY
+    /// </summary>
+    public TemplateMessage GetCodConfirmation(ShopifyOrderPayload order)
+    {
+        var customerName = order.Customer?.FullName ?? "Customer";
+        var orderName = order.Name;
+        var total = order.TotalPrice;
+        var currency = order.Currency;
+
+        _logger.LogInformation("📋 Building cod_confirmation_v1 template for order {Order}", orderName);
+
+        var bodyParams = new List<string> { customerName, orderName, total, currency };
+
+        var buttonParams = new List<TemplateButtonParameter>();
+        var urlSuffix = GetUrlSuffix(order.OrderStatusUrl);
+        if (urlSuffix != null)
+        {
+            buttonParams.Add(new TemplateButtonParameter(0, urlSuffix));
+        }
+
+        return new TemplateMessage("cod_confirmation_v1", bodyParams, buttonParams);
     }
 
     // ──────────────────────────────────────────────
