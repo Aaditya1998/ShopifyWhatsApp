@@ -26,7 +26,8 @@ public class ShopifyService : IShopifyService
         { "orders/fulfilled", "/api/webhooks/shopify/order-fulfilled" },
         { "orders/cancelled", "/api/webhooks/shopify/order-cancelled" },
         { "checkouts/create", "/api/webhooks/shopify/checkout-abandoned" },
-        { "refunds/create", "/api/webhooks/shopify/order-refund-created" }
+        { "refunds/create", "/api/webhooks/shopify/order-refund-created" },
+        { "orders/updated", "/api/webhooks/shopify/order-updated" }
     };
 
     public ShopifyService(

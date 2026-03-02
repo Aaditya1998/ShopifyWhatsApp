@@ -393,6 +393,77 @@ public class ShopifyWebhookController : ControllerBase
     }
 
     // ──────────────────────────────────────────────
+    // POST /api/webhooks/shopify/order-updated
+    // Fires on any order change — we filter for delivery only
+    // ──────────────────────────────────────────────
+    [HttpPost("order-updated")]
+    public async Task<IActionResult> OrderUpdated()
+    {
+        try
+        {
+            var order = await ReadBody<ShopifyOrderPayload>();
+            if (order == null) return Ok(new { status = "skipped", reason = "invalid_payload" });
+
+            // Check if any fulfillment has shipment_status == "delivered"
+            var deliveredFulfillment = order.Fulfillments
+                .FirstOrDefault(f => string.Equals(f.ShipmentStatus, "delivered", StringComparison.OrdinalIgnoreCase));
+
+            if (deliveredFulfillment == null)
+            {
+                // Not a delivery event — silently skip (orders/updated fires on MANY changes)
+                return Ok(new { status = "skipped", reason = "not_delivered" });
+            }
+
+            _logger.LogInformation("📬 Delivery detected for order {OrderName} (fulfillment {FulfillmentId})",
+                order.Name, deliveredFulfillment.Id);
+
+            // Idempotency: check if we already sent a delivery confirmation for this order
+            var alreadySent = await _db.MessageLogs
+                .AnyAsync(m => m.ShopifyOrderId == order.Id && m.EventType == "order_delivered");
+
+            if (alreadySent)
+            {
+                _logger.LogInformation("⏭️ Delivery confirmation already sent for order {OrderName}", order.Name);
+                return Ok(new { status = "skipped", reason = "already_sent" });
+            }
+
+            var phone = GetCustomerPhone(order.Customer, order.ShippingAddress);
+            if (phone == null)
+            {
+                _logger.LogWarning("⚠️ No phone number for delivery on order {OrderName}", order.Name);
+                return Ok(new { status = "skipped", reason = "no_phone" });
+            }
+
+            if (!await _consent.HasConsentAsync(phone))
+            {
+                await _consent.RecordConsentAsync(phone, "checkout", order.Customer?.Id);
+                _logger.LogInformation("✅ Auto-consented {Phone} via checkout", phone);
+            }
+
+            var templateMessage = _templates.GetDeliveryConfirmation(order);
+            _logger.LogInformation("📋 Sending {Template} to {Phone} | Params: {Params}, Buttons: {Buttons}",
+                templateMessage.TemplateName, phone,
+                string.Join(", ", templateMessage.BodyParameters),
+                templateMessage.ButtonParameters.Count);
+
+            var result = await _whatsApp.SendTemplateMessageAsync(phone, templateMessage);
+
+            await _consent.LogMessageAsync(
+                phone, templateMessage.TemplateName, "order_delivered",
+                shopifyOrderId: order.Id,
+                whatsAppMessageId: result?.Messages?.FirstOrDefault()?.Id,
+                errorMessage: result == null ? "API call failed after retries" : null);
+
+            return Ok(new { status = result != null ? "sent" : "failed", template = templateMessage.TemplateName });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "💀 CRITICAL: OrderUpdated handler crashed");
+            return Ok(new { status = "error", message = ex.Message });
+        }
+    }
+
+    // ──────────────────────────────────────────────
     // Helpers
     // ──────────────────────────────────────────────
 

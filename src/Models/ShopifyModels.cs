@@ -123,6 +123,14 @@ public class ShopifyFulfillment
     [JsonProperty("status")]
     public string Status { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Carrier-updated tracking status:
+    /// label_printed, label_purchased, attempted_delivery, ready_for_pickup,
+    /// confirmed, in_transit, out_for_delivery, delivered, failure
+    /// </summary>
+    [JsonProperty("shipment_status")]
+    public string? ShipmentStatus { get; set; }
+
     [JsonProperty("tracking_number")]
     public string? TrackingNumber { get; set; }
 

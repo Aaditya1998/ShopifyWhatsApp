@@ -11,6 +11,7 @@ public interface ITemplateService
     TemplateMessage GetAbandonedCart(ShopifyCheckoutPayload checkout);
     TemplateMessage GetOrderRefund(ShopifyOrderPayload order, string refundAmount, string currency, string reason);
     TemplateMessage GetCodConfirmation(ShopifyOrderPayload order);
+    TemplateMessage GetDeliveryConfirmation(ShopifyOrderPayload order);
 }
 
 /// <summary>
@@ -194,6 +195,32 @@ public class TemplateService : ITemplateService
         }
 
         return new TemplateMessage("cod_confirmation_v1", bodyParams, buttonParams);
+    }
+
+    /// <summary>
+    /// Template: delivery_confirmation_v1
+    /// Body: "Hi {{1}}, great news! Your order {{2}} has been delivered.
+    ///        We hope you enjoy your purchase! If you have any issues, please reply to this message."
+    /// Button[0]: URL "View Order" → dynamic {{1}}
+    /// Category: UTILITY
+    /// </summary>
+    public TemplateMessage GetDeliveryConfirmation(ShopifyOrderPayload order)
+    {
+        var customerName = order.Customer?.FullName ?? "Customer";
+        var orderName = order.Name;
+
+        _logger.LogInformation("📋 Building delivery_confirmation_v1 template for order {Order}", orderName);
+
+        var bodyParams = new List<string> { customerName, orderName };
+
+        var buttonParams = new List<TemplateButtonParameter>();
+        var urlSuffix = GetUrlSuffix(order.OrderStatusUrl);
+        if (urlSuffix != null)
+        {
+            buttonParams.Add(new TemplateButtonParameter(0, urlSuffix));
+        }
+
+        return new TemplateMessage("delivery_confirmation_v1", bodyParams, buttonParams);
     }
 
     // ──────────────────────────────────────────────
